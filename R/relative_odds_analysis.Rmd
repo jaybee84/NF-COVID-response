@@ -1,0 +1,69 @@
+---
+title: "relative_odds_analysis"
+author: "Jineta Banerjee"
+date: "8/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libaries}
+library(readr)
+library(boot)
+library(gdata)
+library(glue)
+library(ggplot2)
+library(tidyverse)
+library(BayesFactor)
+library(pheatmap)
+library(RColorBrewer)
+redblue<-colorRampPalette(c("orange","white","black"), interpolate ="linear")
+```
+
+
+# Analysis and Plots
+
+## Age-adjusted Proportions
+```{r proportions, echo=TRUE}
+
+odds_df <- read_csv("~/Data_files/relative_odds_covid_083021.csv")
+OR <- odds_df[c(1:4,10:11),c(1,17,19:23)]
+
+pdf("~/Figures/OR_log_test_083021_1.pdf", height = 10, width = 40)
+pheatmap(OR[,c(2:7)] ,
+         color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdGy")), bias = 1.02)(100),
+         labels_col=colnames(OR[,c(2:7)]),
+         labels_row = OR$group,
+         fontsize_row = 15,
+         fontsize = 15,
+         cluster_rows = F,
+         cluster_cols = F,
+         clustering_method = 'complete',
+         width = 30, 
+         height = 30)
+dev.off()
+```
+
+## Severe Outcomes
+```{r severe outcomes, echo=FALSE}
+
+odds_df <- read_csv("~/Data_files/relative_odds_sever_outcomes_083021.csv")
+OR <- odds_df[c(1:4,10:11),c(1,17,19:23)]
+
+pdf("~/Figures/OR_severe_outcome_log_083021_1.pdf", height = 10, width = 40)
+pheatmap(OR[,c(2:7)] ,
+         color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdGy")), bias = 0.99)(100),
+         labels_col=colnames(OR[,c(2:7)]),
+         labels_row = OR$group,
+         fontsize_row = 15,
+         fontsize = 15,
+         cluster_rows = F,
+         cluster_cols = F,
+         clustering_method = 'complete',
+         width = 30, 
+         height = 30)
+dev.off()
+```
+
