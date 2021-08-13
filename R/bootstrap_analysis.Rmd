@@ -1,0 +1,336 @@
+---
+title: "bootstrap_analysis"
+author: "Jineta Banerjee"
+date: "8/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libaries}
+library(readr)
+library(boot)
+library(gdata)
+library(glue)
+library(ggplot2)
+library(tidyverse)
+library(BayesFactor)
+library(bayestestR)
+library(logspline)
+```
+
+## Functions
+
+```{r bootstrap, echo=FALSE}
+
+### Bootstrap t-test
+bootstrap_func <- function(test_vector, other_vector, comparison_vector, nrep){
+  set.seed(999999)
+  
+  pval_df <- data.frame("iter" = 1:nrep, "pval"= 1:nrep, "norm1"= 1:nrep, "norm2"=1:nrep)
+  
+  pval_df$iter[1] <- glue('Iter{1}')
+  pval_df$pval[1] <- t.test(test_vector, comparison_vector)$p.value
+  pval_df$norm1[1] <- shapiro.test(test_vector)$p.value
+  pval_df$norm2[1] <- shapiro.test(comparison_vector)$p.value
+
+  for (i in 2:nrep){
+    nsample <- length(test_vector)
+    nf_pos <- gdata::resample(test_vector, nsample, replace = TRUE)
+    resamp_others <- gdata::resample(other_vector, nsample, replace= TRUE)
+    
+    df <- data.frame(1:nsample,1:2)
+    colnames(df) <- c("test", "resample")
+    df[,1] <- nf_pos
+    df[,2] <- resamp_others
+    
+    stat <- t.test(df$test, df$resample)
+    norm1 <- shapiro.test(df$test)
+    norm2 <- shapiro.test(df$resample)
+    
+    pval_df$iter[i] <- glue('Iter{i}')
+    pval_df$pval[i] <- stat$p.value
+    pval_df$norm1[i] <- norm1$p.value
+    pval_df$norm2[i] <- norm2$p.value
+  }
+  return(pval_df)
+}
+
+### Bootstrap wilcox-test
+bootstrap_func_wilcox <- function(test_vector, other_vector, comparison_vector, nrep){
+  set.seed(999999)
+  
+  pval_df <- data.frame("iter" = 1:nrep, "pval"= 1:nrep)
+  
+  pval_df$iter[1] <- glue('Iter{1}')
+  pval_df$pval[1] <- wilcox.test(test_vector, comparison_vector)$p.value
+  
+  for (i in 2:nrep){
+    nsample <- length(test_vector)
+    nf_pos <- gdata::resample(test_vector, nsample, replace = TRUE)
+    resamp_others <- gdata::resample(other_vector, nsample, replace= TRUE)
+    
+    df <- data.frame(1:nsample,1:2)
+    colnames(df) <- c("test", "resample")
+    df[,1] <- nf_pos
+    df[,2] <- resamp_others
+    
+    stat <- wilcox.test(df$test, df$resample)
+    
+    pval_df$iter[i] <- glue('Iter{i}')
+    pval_df$pval[i] <- stat$p.value
+  }
+  return(pval_df)
+}
+
+```
+
+```{r plot, echo=FALSE}
+
+plot_bootstrap <- function(plot_data){
+  theme_update(legend.text = element_text(size=10), 
+               axis.text.x  = element_text(size=50),
+               axis.text.y = element_text(size=50),
+               text = element_text(size=50))
+  
+  ggplot(plot_data, aes(x= pval)) +
+    geom_histogram(color="white", fill= "grey")+
+    geom_vline(aes(xintercept=pval[1]),
+               color="red", linetype="dashed", size=1) +
+    annotate("text", 
+             x = plot_data$pval[1], 
+             y=2300, 
+             label = glue("p-val={sprintf(plot_data$pval[1], fmt = '%#.5f')}"),
+             size = 30,
+             hjust = -0.2)
+  
+
+}
+```
+
+# Data
+
+```{r data, echo=FALSE}
+
+bootstrap_df <- read_csv("/home/ubuntu/Data_files/age_adjusted_covid_prop_083021.csv")
+bootstrap_df <- bootstrap_df[,c(2:12)]
+
+severe_outcome_df <- read_csv("/home/ubuntu/Data_files/age_adjusted_severe_outcome_083021.csv")
+severe_outcome_df <- severe_outcome_df[,c(2:12)]
+
+ventilated_df <- read_csv("/home/ubuntu/Data_files/age_adjusted_ventilation_083021.csv")
+ventilated_df <- ventilated_df[,c(2:12)]
+
+age_df <- read_csv("/home/ubuntu/Data_files/Age.csv")
+hospital_stay <- read_csv("/home/ubuntu/Data_files/Hospital_stay_severe_outcome.csv")
+race_df <- read_csv("/home/ubuntu/Data_files/Race_083021.csv")
+gender_df <- read_csv("/home/ubuntu/Data_files/Gender_083021.csv")
+```
+
+```{r iterations, echo=FALSE}
+iterations <- 10000
+```
+
+# Analysis and Plots
+
+## Age-adjusted Proportions
+```{r proportions, echo=TRUE}
+
+### Rare in all
+test_vector <- bootstrap_df$NF
+other_vector <- c(bootstrap_df$NonNF, 
+                  bootstrap_df$DM1, 
+                  bootstrap_df$Hyp, 
+                  bootstrap_df$NF,
+                  bootstrap_df$TS,
+                  bootstrap_df$AML,
+                  bootstrap_df$FX,
+                  bootstrap_df$MCC,
+                  bootstrap_df$NF2,
+                  bootstrap_df$SWN)
+
+plot_data <- bootstrap_func(test_vector = test_vector, other_vector = other_vector, comparison_vector = other_vector, nrep = iterations)
+
+#compare median of bootstrap distribution with observed stat
+wilcox_val <- wilcox.test(plot_data$pval[1], plot_data$pval[2:length(plot_data)])
+
+##### Histogram
+pdf("~/Figures/rareinall_NF2included_083021_ttest.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = plot_data)
+dev.off()
+
+### NonRare in all
+test_vector <- bootstrap_df$DM1
+other_vector <- c(bootstrap_df$NonNF, 
+                  bootstrap_df$Hyp, 
+                  bootstrap_df$NF,
+                  bootstrap_df$TS,
+                  bootstrap_df$AML,
+                  bootstrap_df$FX,
+                  bootstrap_df$MCC,
+                  bootstrap_df$NF2,
+                  bootstrap_df$SWN)
+
+plot_data <- bootstrap_func(test_vector = test_vector, other_vector = other_vector, comparison_vector = other_vector, nrep = iterations)
+
+#compare median of bootstrap distribution with observed stat
+wilcox_val <- wilcox.test(plot_data$pval[1], plot_data$pval[2:length(plot_data)])
+
+##### Histogram
+pdf("~/Figures/nonrareinall_NF2included_083021_ttest.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = plot_data)
+dev.off()
+ 
+### Rare in Rare
+test_vector <- bootstrap_df$NF
+other_vector <- c(bootstrap_df$TS,
+                  bootstrap_df$FX,
+                  bootstrap_df$AML,
+                  bootstrap_df$MCC,
+                  bootstrap_df$NF2,
+                  bootstrap_df$SWN)
+
+plot_data <- bootstrap_func(test_vector = test_vector, other_vector = other_vector, comparison_vector = other_vector, nrep = iterations)
+
+#compare median of bootstrap distribution with observed stat
+wilcox_val <- wilcox.test(plot_data$pval[1], plot_data$pval[2:length(plot_data)])
+
+##### Histogram
+pdf("~/Figures/rareinrare_083021_NF2included_ttest.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = plot_data)
+dev.off()
+
+```
+
+## Severe Outcomes
+```{r severe outcomes, echo=FALSE}
+
+### NF1 vs all
+test_vector_sev <- severe_outcome_df$NF
+other_vector_sev <- c(severe_outcome_df$TS,
+                  severe_outcome_df$NonNF,
+                  severe_outcome_df$Hyp,
+                  severe_outcome_df$FX,
+                  severe_outcome_df$AML,
+                  severe_outcome_df$DM1,
+                  severe_outcome_df$MCC,
+                  severe_outcome_df$NF2,
+                  severe_outcome_df$SWN)
+
+new_plot_data <- bootstrap_func_wilcox(test_vector = test_vector_sev, other_vector = other_vector_sev, comparison_vector = other_vector_sev, nrep = iterations)
+
+wilcox_val <- wilcox.test(new_plot_data$pval[1], new_plot_data$pval[2:length(new_plot_data)])
+
+# Histogram
+pdf("~/Figures/severe_outcome_NFinall_age_adjusted_083021.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = new_plot_data)
+dev.off()
+
+### DM1 vs all
+test_vector <- severe_outcome_df$DM1
+other_vector <- c(severe_outcome_df$TS,
+                  severe_outcome_df$NonNF,
+                  severe_outcome_df$Hyp,
+                  severe_outcome_df$FX,
+                  severe_outcome_df$AML,
+                  severe_outcome_df$NF,
+                  severe_outcome_df$MCC,
+                  severe_outcome_df$NF2,
+                  severe_outcome_df$SWN)
+
+new_plot_data <- bootstrap_func_wilcox(test_vector = test_vector, other_vector = other_vector, comparison_vector = other_vector, nrep = iterations)
+
+wilcox_val <- wilcox.test(new_plot_data$pval[1], new_plot_data$pval[2:length(new_plot_data)])
+
+# Histogram
+pdf("~/Figures/severe_outcome_nonrareinall_age_adjusted_083021.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = new_plot_data)
+dev.off()
+
+### Rare vs rare
+test_vector <- severe_outcome_df$NF
+other_vector <- c(severe_outcome_df$TS,
+                  severe_outcome_df$FX,
+                  severe_outcome_df$AML,
+                  severe_outcome_df$MCC,
+                  severe_outcome_df$NF2,
+                  severe_outcome_df$SWN)
+
+new_plot_data <- bootstrap_func_wilcox(test_vector = test_vector, other_vector = other_vector,comparison_vector = other_vector, nrep = iterations)
+
+wilcox_val <- wilcox.test(new_plot_data$pval[1], new_plot_data$pval[2:length(new_plot_data)])
+
+# Histogram
+pdf("~/Figures/severe_outcome_rareinrare_age_adjusted_083021.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = new_plot_data)
+dev.off()
+
+```
+
+## Invasive ventilation
+```{r ventilated, echo=FALSE}
+
+### Ventilated NF vs all
+test_vector <- ventilated_df$NF
+other_vector <- c(ventilated_df$TS,
+                  ventilated_df$NonNF,
+                  ventilated_df$Hyp,
+                  ventilated_df$FX,
+                  ventilated_df$AML,
+                  ventilated_df$DM1,
+                  ventilated_df$MCC,
+                  ventilated_df$NF2,
+                  ventilated_df$SWN)
+
+plot_data <- bootstrap_func_wilcox(test_vector = test_vector, other_vector = other_vector,comparison_vector = other_vector, nrep = iterations)
+
+wilcox_val <- wilcox.test(plot_data$pval[1], plot_data$pval[2:length(plot_data)])
+
+# Histogram
+pdf("~/Figures/ventilated_NFinall_age_adjusted_083021.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = plot_data)
+dev.off()
+
+### DM1 vs all
+test_vector <- ventilated_df$DM1
+other_vector <- c(ventilated_df$TS,
+                  ventilated_df$NonNF,
+                  ventilated_df$NF,
+                  ventilated_df$FX,
+                  ventilated_df$AML,
+                  ventilated_df$Hyp,
+                  ventilated_df$MCC,
+                  ventilated_df$NF2,
+                  ventilated_df$SWN)
+
+plot_data <- bootstrap_func_wilcox(test_vector = test_vector, other_vector = other_vector,comparison_vector = other_vector, nrep = iterations)
+
+wilcox_val <- wilcox.test(plot_data$pval[1], plot_data$pval[2:length(plot_data)])
+
+# Histogram
+pdf("~/Figures/ventilated_nonrareinall_age_adjusted_083021.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = plot_data)
+dev.off()
+
+### Rare vs rare
+test_vector <- ventilated_df$NF
+other_vector <- c(ventilated_df$TS,
+                  ventilated_df$FX,
+                  ventilated_df$AML,
+                  ventilated_df$MCC,
+                  ventilated_df$NF2,
+                  ventilated_df$SWN)
+
+plot_data <- bootstrap_func_wilcox(test_vector = test_vector, other_vector = other_vector,comparison_vector = other_vector, nrep = iterations)
+
+wilcox_val <- wilcox.test(plot_data$pval[1], plot_data$pval[2:length(plot_data)])
+
+# Histogram
+pdf("~/Figures/ventilated_rareinrare_age_adjusted_083021.pdf", height = 20, width = 20)
+plot_bootstrap(plot_data = plot_data)
+dev.off()
+
+```
+
